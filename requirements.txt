@@ -13,7 +13,8 @@ yfinance==0.2.32
 pandas==2.1.3
 numpy==1.26.2
 ta==0.11.0  # Technical analysis library
-pandas-ta==0.3.14b  # Additional indicators
+pandas==2.1.2   # <-- downgrade from 2.1.3
+
 
 # WebSocket
 websockets==12.0
