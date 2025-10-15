@@ -5,30 +5,27 @@ python-multipart==0.0.6
 
 # Database
 sqlalchemy==2.0.23
-psycopg2-binary==2.9.9  # PostgreSQL (optional)
-alembic==1.12.1  # Database migrations (optional)
+psycopg2-binary==2.9.9
+alembic==1.12.1
 
 # Data & Trading
 yfinance==0.2.32
-pandas==2.1.3
+pandas==2.1.2
 numpy==1.26.2
-ta==0.11.0  # Technical analysis library
-pandas==2.1.2   # <-- downgrade from 2.1.3
-
+ta==0.11.0
 
 # WebSocket
 websockets==12.0
 
 # Async support
 aiohttp==3.9.1
-asyncio==3.4.3
 
 # Environment variables
 python-dotenv==1.0.0
 
 # CORS and middleware
-python-jose[cryptography]==3.3.0  # For tokens if needed later
-passlib[bcrypt]==1.7.4  # For passwords if needed later
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
 
 # Data validation
 pydantic==2.5.0
@@ -45,4 +42,4 @@ pytz==2023.3
 
 # Optional: ML libraries
 scikit-learn==1.3.2
-tensorflow==2.15.0  # If you want LSTM
+tensorflow==2.15.0
