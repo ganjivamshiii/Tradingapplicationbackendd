@@ -6,6 +6,9 @@ from ...schemas.market_data import(
     MarketDataResponse,
     OHLCV
 )
+import traceback
+import pandas as pd
+
 router = APIRouter()
 
 @router.get("/historical/{symbol}")
@@ -21,56 +24,132 @@ async def get_historical_data(
     - **interval**: Data interval/frequency
     """
     try:
-        # Fixed typo in method name
+        print(f"📊 [Route] Fetching {symbol}, period={period}, interval={interval}")
+        
+        # Get data from service
         data = data_feed.get_historical_data(symbol, period, interval)
+        
+        # Check if data is empty
+        if data is None or data.empty:
+            print(f"⚠️ [Route] No data returned for {symbol}")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No data found for symbol {symbol}"
+            )
+        
+        print(f"✅ [Route] Data received: {len(data)} rows")
+        print(f"📋 [Route] Columns: {data.columns.tolist()}")
+        
         ohlcv_data = []
         
-        if data is None or data.empty:
-            raise HTTPException(status_code=404, detail=f"No data found for symbol {symbol}")
-            
-        for _, row in data.iterrows():
-            ohlcv_data.append(OHLCV(
-                timestamp=row['timestamp'],
-                open=float(row['open']),
-                high=float(row['high']),
-                low=float(row['low']),  # Fixed typo
-                close=float(row['close']),
-                volume=int(row['volume'])  # Fixed typo
-            ))
+        for idx, row in data.iterrows():
+            try:
+                # Handle timestamp conversion
+                timestamp = row['timestamp']
+                if pd.isna(timestamp):
+                    print(f"⚠️ [Route] Skipping row {idx}: timestamp is NaN")
+                    continue
+                
+                # Convert timestamp to string if needed
+                if hasattr(timestamp, 'isoformat'):
+                    timestamp_str = timestamp.isoformat()
+                else:
+                    timestamp_str = str(timestamp)
+                
+                # Check for NaN values and skip invalid rows
+                if any(pd.isna(row[col]) for col in ['open', 'high', 'low', 'close', 'volume']):
+                    print(f"⚠️ [Route] Skipping row {idx}: contains NaN values")
+                    continue
+                
+                ohlcv_data.append(OHLCV(
+                    timestamp=timestamp_str,
+                    open=float(row['open']),
+                    high=float(row['high']),
+                    low=float(row['low']),
+                    close=float(row['close']),
+                    volume=int(row['volume'])
+                ))
+            except Exception as row_error:
+                print(f"❌ [Route] Error processing row {idx}: {str(row_error)}")
+                print(f"📋 [Route] Row data: {row.to_dict()}")
+                continue
+        
+        if not ohlcv_data:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No valid data could be processed for {symbol}"
+            )
+        
+        print(f"✅ [Route] Successfully processed {len(ohlcv_data)} data points")
+        
         return {
-            "symbol": symbol,  # Fixed typo
+            "symbol": symbol,
             "period": period,
             "interval": interval,
             "data": ohlcv_data,
             "count": len(ohlcv_data)
         }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        print(f"❌ [Route] ERROR: {error_msg}")
+        print(f"📋 [Route] Traceback:\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Error fetching data: {error_msg}"
+        )
+
 
 @router.get("/live/{symbol}")
-async def get_live_data(symbol: str):  # Fixed parameter name typo
+async def get_live_data(symbol: str):
     """
     Get real-time data for a symbol
     """
     try:
+        print(f"📡 [Route] Fetching live data for {symbol}")
         data = data_feed.get_realtime_data(symbol)
+        
+        if data is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No real-time data available for {symbol}"
+            )
+        
         return data
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ [Route] Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/price/{symbol}")  # Added missing slash
+
+@router.get("/price/{symbol}")
 async def get_latest_price(symbol: str):
     """
     Get the latest price for a symbol
     """
     try:
+        print(f"💰 [Route] Fetching price for {symbol}")
         price = data_feed.get_latest_price(symbol)
+        
+        if price is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No price data available for {symbol}"
+            )
+        
         return {
             "symbol": symbol,
             "latest_price": price
         }
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ [Route] Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.post("/multiple")
 async def get_multiple_historical_data(
@@ -86,23 +165,44 @@ async def get_multiple_historical_data(
     - **interval**: Data interval
     """
     try:
+        print(f"📊 [Route] Fetching multiple symbols: {symbols}")
         result = data_feed.get_multiple_symbols(symbols, period, interval)
         response = {}
+        
         for symbol, data in result.items():
             if data is not None and not data.empty:
                 ohlcv_data = []
-                for _, row in data.iterrows():
-                    ohlcv_data.append(OHLCV(
-                        timestamp=row['timestamp'],
-                        open=float(row['open']),
-                        high=float(row['high']),
-                        low=float(row['low']),
-                        close=float(row['close']),
-                        volume=int(row['volume'])
-                    ))
-                response[symbol] = ohlcv_data
+                for idx, row in data.iterrows():
+                    try:
+                        # Skip rows with NaN values
+                        if any(pd.isna(row[col]) for col in ['timestamp', 'open', 'high', 'low', 'close', 'volume']):
+                            continue
+                        
+                        timestamp = row['timestamp']
+                        if hasattr(timestamp, 'isoformat'):
+                            timestamp_str = timestamp.isoformat()
+                        else:
+                            timestamp_str = str(timestamp)
+                        
+                        ohlcv_data.append(OHLCV(
+                            timestamp=timestamp_str,
+                            open=float(row['open']),
+                            high=float(row['high']),
+                            low=float(row['low']),
+                            close=float(row['close']),
+                            volume=int(row['volume'])
+                        ))
+                    except Exception as row_error:
+                        print(f"⚠️ [Route] Skipping row for {symbol}: {str(row_error)}")
+                        continue
+                
+                response[symbol] = ohlcv_data if ohlcv_data else None
             else:
                 response[symbol] = None
+        
         return response
+        
     except Exception as e:
+        print(f"❌ [Route] Error: {str(e)}")
+        print(f"📋 [Route] Traceback:\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=str(e))
