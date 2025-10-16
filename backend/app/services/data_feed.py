@@ -4,6 +4,7 @@ from typing import Optional, List, Dict
 import asyncio
 import requests
 import time
+from datetime import datetime, timedelta
 
 class DataFeed:
     """Service to fetch market data from Yahoo Finance and other sources."""
@@ -20,7 +21,10 @@ class DataFeed:
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
             'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none'
         })
 
     def _normalize_symbol(self, symbol: str) -> str:
@@ -32,32 +36,65 @@ class DataFeed:
         }
         return mapping.get(symbol.upper(), symbol.upper())
 
+    def _period_to_dates(self, period: str):
+        """Convert period string to start/end dates"""
+        end_date = datetime.now()
+        
+        period_map = {
+            '1d': 1,
+            '5d': 5,
+            '1mo': 30,
+            '3mo': 90,
+            '6mo': 180,
+            '1y': 365,
+            '2y': 730,
+            '5y': 1825,
+            '10y': 3650,
+        }
+        
+        days = period_map.get(period, 30)
+        start_date = end_date - timedelta(days=days)
+        
+        return start_date, end_date
+
     def get_historical_data(
         self, symbol: str, period: str = "1mo", interval: str = "1d"
     ) -> pd.DataFrame:
-        """Fetch historical OHLCV data with retry logic."""
+        """Fetch historical OHLCV data using alternative method."""
         symbol = self._normalize_symbol(symbol)
         
         print(f"📊 [DataFeed] Fetching historical data for {symbol} (period={period}, interval={interval})")
         
         max_retries = 3
-        retry_delay = 2  # seconds
+        retry_delay = 2
         
         for attempt in range(max_retries):
             try:
-                # Create ticker with custom session to avoid blocking
-                ticker = yf.Ticker(symbol, session=self.session)
+                # METHOD 1: Try using yf.download (more reliable on cloud platforms)
+                print(f"🔄 [DataFeed] Attempt {attempt + 1}/{max_retries} using yf.download method")
                 
-                # Fetch historical data with timeout
-                df = ticker.history(
-                    period=period, 
+                start_date, end_date = self._period_to_dates(period)
+                
+                # Use yf.download instead of ticker.history
+                df = yf.download(
+                    symbol,
+                    start=start_date,
+                    end=end_date,
                     interval=interval,
-                    timeout=20,
-                    raise_errors=True
+                    progress=False,
+                    session=self.session
                 )
 
                 if df.empty:
-                    print(f"⚠️ [DataFeed] Attempt {attempt + 1}/{max_retries}: No data returned for {symbol}")
+                    print(f"⚠️ [DataFeed] Method 1 failed: No data returned for {symbol}")
+                    
+                    # METHOD 2: Try the direct ticker method as fallback
+                    print(f"🔄 [DataFeed] Trying fallback method with ticker.history")
+                    ticker = yf.Ticker(symbol, session=self.session)
+                    df = ticker.history(period=period, interval=interval, timeout=20)
+
+                if df.empty:
+                    print(f"⚠️ [DataFeed] Attempt {attempt + 1}/{max_retries}: Still no data for {symbol}")
                     
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay)
@@ -117,21 +154,18 @@ class DataFeed:
         print(f"💰 [DataFeed] Fetching latest price for {symbol}")
         
         try:
-            ticker = yf.Ticker(symbol, session=self.session)
+            # Try download method first
+            df = yf.download(symbol, period="1d", interval="1m", progress=False, session=self.session)
             
-            # Try to get intraday data first
-            data = ticker.history(period="1d", interval="1m", timeout=15)
+            if df.empty:
+                # Fallback to daily
+                df = yf.download(symbol, period="5d", progress=False, session=self.session)
 
-            if data.empty:
-                # Fallback to daily data
-                print(f"⚠️ [DataFeed] No intraday data, trying daily data for {symbol}")
-                data = ticker.history(period="5d", timeout=15)
-
-            if data.empty:
+            if df.empty:
                 print(f"❌ [DataFeed] No price data available for {symbol}")
                 return None
 
-            price = float(data['Close'].iloc[-1])
+            price = float(df['Close'].iloc[-1])
             print(f"✅ [DataFeed] Latest price for {symbol}: ${price:.2f}")
             return price
 
@@ -146,21 +180,21 @@ class DataFeed:
         print(f"📡 [DataFeed] Fetching real-time data for {symbol}")
         
         try:
-            ticker = yf.Ticker(symbol, session=self.session)
-            
-            # Try intraday data
-            hist = ticker.history(period="1d", interval="1m", timeout=15)
+            # Use download method
+            hist = yf.download(symbol, period="1d", interval="1m", progress=False, session=self.session)
 
             if hist.empty:
-                # Fallback to daily data
                 print(f"⚠️ [DataFeed] No intraday data, using daily for {symbol}")
-                hist = ticker.history(period="5d", timeout=15)
+                hist = yf.download(symbol, period="5d", progress=False, session=self.session)
 
             if hist.empty:
                 print(f"❌ [DataFeed] No real-time data available for {symbol}")
                 return None
 
             latest = hist.iloc[-1]
+            
+            # Get the timestamp (index)
+            timestamp = hist.index[-1]
             
             # Calculate change safely
             change = float(latest['Close'] - latest['Open'])
@@ -175,7 +209,7 @@ class DataFeed:
                 'high': float(latest['High']),
                 'low': float(latest['Low']),
                 'volume': int(latest['Volume']),
-                'timestamp': latest.name.isoformat() if hasattr(latest.name, "isoformat") else str(latest.name),
+                'timestamp': timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp),
                 'change': change,
                 'change_percent': change_percent
             }
@@ -225,7 +259,7 @@ class DataFeed:
             
             # Small delay between requests to avoid rate limiting
             if idx < len(symbols):
-                time.sleep(0.5)
+                time.sleep(1)
         
         successful = sum(1 for v in result.values() if v is not None)
         print(f"✅ [DataFeed] Successfully fetched {successful}/{len(symbols)} symbols")
