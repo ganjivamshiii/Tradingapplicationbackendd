@@ -9,7 +9,7 @@ class UserBase(BaseModel):
     full_name:Optional[str]=None
 
 class UserCreate(UserBase):
-    password:str=Field(..., min_legnth=6, max_length=100)
+    password:str=Field(..., min_length=6, max_length=100)
     initial_capital:Optional[float]=Field(default=10000.0, gt=0)
     risk_tolerance:Optional[str]=Field(default="medium")
 
