@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     
     # CORS - Accept string and convert to list
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,https://hfttradingview.netlify.app,https://68f085fb1bf56b0008332587--hfttradingview.netlify.app"
     
     # Database
     DATABASE_URL: str = "sqlite:///./trading.db"  # SQLite for simplicity

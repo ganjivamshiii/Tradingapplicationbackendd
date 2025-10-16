@@ -16,8 +16,7 @@ app = FastAPI(
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://hfttradingview.netlify.app",
-                   "https://68f085fb1bf56b0008332587--hfttradingview.netlify.app"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
