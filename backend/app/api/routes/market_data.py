@@ -9,6 +9,7 @@ from ...schemas.market_data import(
 import traceback
 import pandas as pd
 
+
 router = APIRouter()
 
 @router.get("/historical/{symbol}")
